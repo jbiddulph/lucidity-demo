@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type {
   LucidityDemoPayload,
+  LucidityDisplayField,
   LucidityDocument,
   LucidityIncludedCollection,
   LucidityNavItem,
@@ -383,6 +384,7 @@ export async function lucidityGetBySlug(slug: string): Promise<LuciditySlugPaylo
         kind: 'page',
         document: page,
         schema: pageType,
+        fields: await buildDisplayFields(page, pageType, discovered.types),
         included,
       }
     }
@@ -401,12 +403,162 @@ export async function lucidityGetBySlug(slug: string): Promise<LuciditySlugPaylo
         kind: 'document',
         document,
         schema: type,
+        // Resolve author ids → names, publishedAt → "Published at", etc.
+        fields: await buildDisplayFields(document, type, discovered.types),
         included: [],
       }
     }
   }
 
   return null
+}
+
+type SchemaField = {
+  name?: string
+  title?: string
+  type?: string
+  to?: unknown
+}
+
+function getSchemaFields(schema: LuciditySchemaType | null): SchemaField[] {
+  if (!schema || !Array.isArray(schema.fields)) return []
+  return schema.fields.filter((field): field is SchemaField => !!field && typeof field === 'object')
+}
+
+function referenceTargets(fieldDef: SchemaField | undefined, fallback: string[] = []): string[] {
+  const raw = fieldDef?.to
+  if (!Array.isArray(raw) || !raw.length) return fallback
+
+  return raw
+    .map((item) => {
+      if (typeof item === 'string') return item
+      if (item && typeof item === 'object') {
+        const obj = item as Record<string, unknown>
+        return asString(obj.type) || asString(obj.name) || asString(obj.to)
+      }
+      return ''
+    })
+    .filter(Boolean)
+}
+
+function documentLabel(doc: LucidityDocument) {
+  for (const key of ['name', 'title', 'headline', 'label', 'slug']) {
+    const value = asString(doc[key])
+    if (value) return value
+  }
+  return asString(doc._id) || 'Untitled'
+}
+
+function formatDateTime(value: string) {
+  // Lucidity "Now" sentinel — show as Now
+  if (value === 'now' || value === 'Now') return 'Now'
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
+/**
+ * Build human-friendly detail fields from a Lucidity document + its schema.
+ * - Uses schema field titles ("Published at" instead of publishedAt)
+ * - Resolves reference fields (author id → author name) via /api/query?type=author
+ */
+async function buildDisplayFields(
+  document: LucidityDocument,
+  schema: LuciditySchemaType | null,
+  _schemaTypes: LuciditySchemaType[],
+): Promise<LucidityDisplayField[]> {
+  const schemaFields = getSchemaFields(schema)
+  const skip = new Set(['title', 'name', 'slug', 'body', 'items'])
+  const fields: LucidityDisplayField[] = []
+  const queryCache = new Map<string, LucidityDocument[]>()
+
+  async function queryType(typeName: string) {
+    const cached = queryCache.get(typeName)
+    if (cached) return cached
+    const docs = await lucidityQuery(typeName)
+    queryCache.set(typeName, docs)
+    return docs
+  }
+
+  // Prefer schema field order so labels/types are accurate
+  const orderedNames = [
+    ...schemaFields.map((field) => asString(field.name)).filter(Boolean),
+    ...Object.keys(document),
+  ]
+
+  const seen = new Set<string>()
+
+  for (const name of orderedNames) {
+    if (!name || seen.has(name) || name.startsWith('_') || skip.has(name)) continue
+    seen.add(name)
+
+    const value = document[name]
+    if (value == null || value === '') continue
+
+    const fieldDef = schemaFields.find((field) => field.name === name)
+    const label = asString(fieldDef?.title) || name
+    const type = asString(fieldDef?.type) || typeof value
+
+    let text = ''
+    let href: string | null = null
+
+    if (type === 'reference' || name === 'author' || referenceTargets(fieldDef).length > 0) {
+      // Lucidity reference — usually a document _id string; sometimes already expanded
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const resolved = value as LucidityDocument
+        text = documentLabel(resolved)
+        const refSlug = asString(resolved.slug)
+        href = refSlug ? `/${refSlug}` : null
+      }
+      else {
+        const refId = asString(value)
+        if (!refId) continue
+
+        const targetTypes = referenceTargets(
+          fieldDef,
+          name === 'author' ? ['author'] : [],
+        )
+
+        let resolved: LucidityDocument | null = null
+        for (const targetType of targetTypes) {
+          // Lucidity: GET /api/query?type={targetType} then find by _id
+          const docs = await queryType(targetType)
+          resolved = docs.find((doc) => asString(doc._id) === refId) || null
+          if (resolved) break
+        }
+
+        if (resolved) {
+          text = documentLabel(resolved)
+          const refSlug = asString(resolved.slug)
+          href = refSlug ? `/${refSlug}` : null
+        }
+        else {
+          text = refId // fallback if referenced doc missing
+        }
+      }
+    }
+    else if (type === 'datetime' || name.toLowerCase().includes('published')) {
+      text = typeof value === 'string' ? formatDateTime(value) : String(value)
+    }
+    else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      text = String(value)
+    }
+    else {
+      text = JSON.stringify(value, null, 2)
+    }
+
+    fields.push({
+      name,
+      label,
+      type,
+      value,
+      text,
+      href,
+    })
+  }
+
+  return fields
 }
 
 /**

@@ -24,6 +24,8 @@ const document = computed(() => payload.value?.document || null)
 const kind = computed(() => payload.value?.kind || null)
 const included = computed(() => payload.value?.included || [])
 const schema = computed(() => payload.value?.schema || null)
+/** Schema labels + resolved refs (author id → name, Published at, …) */
+const fields = computed(() => payload.value?.fields || [])
 
 const title = computed(() => {
   const doc = document.value
@@ -60,21 +62,6 @@ function itemHref(doc: LucidityDocument) {
   return typeof value === 'string' && value.trim() ? `/${value.trim()}` : null
 }
 
-function fieldEntries(doc: LucidityDocument) {
-  return Object.entries(doc).filter(([key, value]) => {
-    if (key.startsWith('_') || key === 'items') return false
-    if (value == null || value === '') return false
-    if (key === 'title' || key === 'name' || key === 'slug' || key === 'body') return false
-    return true
-  })
-}
-
-function formatValue(value: unknown) {
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
-  }
-  return JSON.stringify(value, null, 2)
-}
 </script>
 
 <template>
@@ -96,12 +83,14 @@ function formatValue(value: unknown) {
       <!-- Full body for pages and individual posts/documents -->
       <div v-if="document.body" class="body">{{ document.body }}</div>
 
-      <!-- Extra fields on document detail views (author, excerpt, etc.) -->
-      <dl v-if="kind === 'document' && fieldEntries(document).length" class="fields">
-        <div v-for="[key, value] in fieldEntries(document)" :key="key">
-          {{ fieldEntries(document) }}
-          <dt class="mono">{{ key }}</dt>
-          <dd>{{ formatValue(value) }}</dd>
+      <!-- Extra fields: schema titles + resolved references (author name, not id) -->
+      <dl v-if="kind === 'document' && fields.length" class="fields">
+        <div v-for="field in fields" :key="field.name">
+          <dt>{{ field.label }}</dt>
+          <dd>
+            <NuxtLink v-if="field.href" :to="field.href">{{ field.text }}</NuxtLink>
+            <template v-else>{{ field.text }}</template>
+          </dd>
         </div>
       </dl>
 

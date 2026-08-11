@@ -37,6 +37,8 @@ const schemaTypes: LucidityDocument[] = [
       { name: 'slug', type: 'slug', title: 'Slug', required: true },
       { name: 'excerpt', type: 'text', title: 'Excerpt' },
       { name: 'body', type: 'text', title: 'Body', required: true },
+      { name: 'author', type: 'reference', title: 'Author', to: ['author'] },
+      { name: 'publishedAt', type: 'datetime', title: 'Published at' },
     ],
   },
   {
@@ -63,6 +65,8 @@ const posts: LucidityDocument[] = [
     slug: 'first-blog-post',
     body: 'here',
     excerpt: '',
+    author: 'mock-author-1',
+    publishedAt: '2026-09-11T18:31',
   },
   {
     _type: 'post',
@@ -72,6 +76,8 @@ const posts: LucidityDocument[] = [
     slug: 'second-post',
     body: 'Another post for the Blog loop.',
     excerpt: 'Included via page.items',
+    author: 'mock-author-1',
+    publishedAt: 'now',
   },
 ]
 

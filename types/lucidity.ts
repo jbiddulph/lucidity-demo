@@ -49,11 +49,25 @@ export interface LucidityPagePayload {
  * - kind "page": Lucidity Page (+ optional Include content loops)
  * - kind "document": any other schema doc matched by slug (post, author, …)
  */
+export interface LucidityDisplayField {
+  name: string
+  /** Human label from schema field title, e.g. "Published at" */
+  label: string
+  type: string
+  /** Raw Lucidity value (id, datetime string, …) */
+  value: unknown
+  /** Ready-to-show text (author name, formatted date, …) */
+  text: string
+  href?: string | null
+}
+
 export interface LuciditySlugPayload {
   kind: 'page' | 'document'
   /** The matched Lucidity document (page, post, author, …) */
   document: LucidityDocument
   schema: LuciditySchemaType | null
+  /** Schema-aware fields for detail views (labels + resolved references) */
+  fields: LucidityDisplayField[]
   /** Only set when kind === "page" */
   included: LucidityIncludedCollection[]
 }
