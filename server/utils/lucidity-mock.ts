@@ -54,6 +54,18 @@ const schemaTypes: LucidityDocument[] = [
       { name: 'bio', type: 'text', title: 'Bio' },
     ],
   },
+  {
+    _type: 'schema',
+    _id: 'mock-schema-homepage',
+    name: 'homepage',
+    title: 'Homepage',
+    description: 'Site homepage hero content',
+    icon: 'home',
+    fields: [
+      { name: 'title', type: 'string', title: 'Header text', required: true },
+      { name: 'hero', type: 'image', title: 'Hero image' },
+    ],
+  },
 ]
 
 const posts: LucidityDocument[] = [
@@ -124,6 +136,14 @@ const documentsByType: Record<string, LucidityDocument[]> = {
       name: 'John Biddulph',
       slug: 'john-biddulph',
       bio: 'Builds headless CMS demos and Nuxt apps.',
+    },
+  ],
+  homepage: [
+    {
+      _type: 'homepage',
+      _id: 'mock-homepage-1',
+      title: 'Welcome to the Lucidity Demo',
+      hero: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=1600&q=80',
     },
   ],
 }

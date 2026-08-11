@@ -2,10 +2,9 @@
 /**
  * Home / demo dashboard
  *
- * Lucidity calls (via /api/lucidity/demo):
- *   GET /api/query/schema-types  → content-type tabs
- *   GET /api/query?type={name}   → documents per type
- *   GET /api/query?type=page     → used for nav preview
+ * Lucidity calls:
+ *   GET /api/query?type=homepage → hero image + header text (top of page)
+ *   GET /api/lucidity/demo       → schema tabs + documents
  *
  * Pages with Include content (items) are rendered on /:slug — see [slug].vue
  */
@@ -21,6 +20,41 @@ type StatusPayload = {
 
 const { data: status } = await useFetch<StatusPayload>('/api/lucidity/status')
 const { data: demo, pending, error, refresh } = await useFetch<LucidityDemoPayload>('/api/lucidity/demo')
+
+/** Lucidity: GET /api/query?type=homepage — first doc drives the site hero */
+const { data: homepageDocs } = await useFetch<LucidityDocument[]>('/api/lucidity/query', {
+  query: { type: 'homepage' },
+})
+
+const homepage = computed(() => homepageDocs.value?.[0] || null)
+
+const heroTitle = computed(() => {
+  const doc = homepage.value
+  if (!doc) return null
+  for (const key of ['title', 'header', 'headline', 'name']) {
+    const value = doc[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return null
+})
+
+const heroImage = computed(() => {
+  const doc = homepage.value
+  if (!doc) return null
+  for (const key of ['hero', 'image', 'heroImage', 'banner']) {
+    const value = doc[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (value && typeof value === 'object') {
+      const url = (value as Record<string, unknown>).url
+      if (typeof url === 'string' && url.trim()) return url.trim()
+    }
+  }
+  return null
+})
+
+useSeoMeta({
+  title: () => (heroTitle.value ? `${heroTitle.value} · Lucidity` : 'Lucidity Demo'),
+})
 
 const activeType = ref<string>('')
 
@@ -74,17 +108,30 @@ function formatDate(value?: string) {
 </script>
 
 <template>
-  <div class="page">
-    <header class="hero">
-      <div class="brand-mark" aria-hidden="true" />
-      <div class="hero-copy">
-        <p class="eyebrow">Lucidity CMS</p>
-        <h1>Schema-driven content demo</h1>
-        <p class="lede">
-          Content types come from
-          <code class="mono">GET /api/query/schema-types</code>.
-          If a Page schema exists, those documents become the site navigation.
-        </p>
+  <div class="home">
+    <!-- Lucidity homepage schema: hero image + header text -->
+    <section
+      v-if="heroTitle || heroImage"
+      class="cms-hero"
+      :class="{ 'has-image': !!heroImage }"
+      :style="heroImage ? { '--hero-image': `url(${heroImage})` } : undefined"
+    >
+      <div v-if="heroImage" class="cms-hero-media" aria-hidden="true" />
+      <div class="cms-hero-copy">
+        <p class="brand">Lucidity</p>
+        <h1 v-if="heroTitle">{{ heroTitle }}</h1>
+      </div>
+    </section>
+
+    <div class="page">
+    <section class="status-strip" aria-label="Connection status">
+      <div class="pill" :data-tone="status?.useMock ? 'warn' : 'ok'">
+        {{ status?.useMock ? 'Mock fixtures' : 'Live Lucidity API' }}
+      </div>
+      <div class="meta">
+        <span class="mono">{{ status?.schemaTypesUrl || 'No schema-types URL' }}</span>
+        <span class="mono">{{ status?.queryUrl || 'No query URL' }}</span>
+        <span v-if="demo?.fetchedAt">Fetched {{ formatDate(demo.fetchedAt) }}</span>
       </div>
       <div class="hero-actions">
         <button class="btn" type="button" :disabled="pending" @click="() => refresh()">
@@ -99,17 +146,6 @@ function formatDate(value?: string) {
         >
           Open Lucidity
         </a>
-      </div>
-    </header>
-
-    <section class="status-strip" aria-label="Connection status">
-      <div class="pill" :data-tone="status?.useMock ? 'warn' : 'ok'">
-        {{ status?.useMock ? 'Mock fixtures' : 'Live Lucidity API' }}
-      </div>
-      <div class="meta">
-        <span class="mono">{{ status?.schemaTypesUrl || 'No schema-types URL' }}</span>
-        <span class="mono">{{ status?.queryUrl || 'No query URL' }}</span>
-        <span v-if="demo?.fetchedAt">Fetched {{ formatDate(demo.fetchedAt) }}</span>
       </div>
     </section>
 
@@ -204,79 +240,112 @@ LUCIDITY_USE_MOCK=false</pre>
         </p>
       </div>
     </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.home {
+  display: grid;
+  gap: 0;
+}
+
+.cms-hero {
+  position: relative;
+  min-height: min(72vh, 38rem);
+  display: grid;
+  align-items: end;
+  overflow: hidden;
+  color: #f4fffb;
+  background:
+    radial-gradient(900px 420px at 12% 8%, rgba(34, 92, 78, 0.55), transparent 58%),
+    linear-gradient(160deg, #16352f 0%, #0b1f1c 100%);
+}
+
+.cms-hero-media {
+  position: absolute;
+  inset: 0;
+  background-image: var(--hero-image);
+  background-size: cover;
+  background-position: center;
+  transform: scale(1.06);
+  animation: hero-drift 18s ease-in-out infinite alternate;
+}
+
+.cms-hero.has-image::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(8, 24, 20, 0.28) 0%, rgba(8, 24, 20, 0.72) 100%),
+    linear-gradient(90deg, rgba(8, 24, 20, 0.55) 0%, rgba(8, 24, 20, 0.15) 55%, transparent 100%);
+}
+
+.cms-hero-copy {
+  position: relative;
+  z-index: 1;
+  width: min(1080px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 4.5rem 0 3.25rem;
+  animation: hero-rise 0.9s ease both;
+}
+
+.cms-hero .brand {
+  margin: 0 0 0.85rem;
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: clamp(2.4rem, 6vw, 4.2rem);
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+}
+
+.cms-hero h1 {
+  margin: 0;
+  max-width: 16ch;
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: clamp(1.55rem, 3.4vw, 2.35rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: rgba(244, 255, 251, 0.92);
+  animation: hero-rise 1.05s ease 0.12s both;
+}
+
+@keyframes hero-drift {
+  from { transform: scale(1.06) translate3d(0, 0, 0); }
+  to { transform: scale(1.12) translate3d(-1.5%, -1%, 0); }
+}
+
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cms-hero-media,
+  .cms-hero-copy,
+  .cms-hero h1 {
+    animation: none;
+  }
+}
+
 .page {
   width: min(1080px, calc(100% - 2rem));
   margin: 0 auto;
-  padding: 2.5rem 0 4rem;
+  padding: 2rem 0 4rem;
   display: grid;
   gap: 1.25rem;
-}
-
-.hero {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 1.25rem;
-  align-items: end;
-  padding: 1.75rem;
-  border-radius: var(--radius);
-  background:
-    linear-gradient(135deg, rgba(15, 118, 110, 0.92), rgba(11, 45, 40, 0.96)),
-    var(--bg);
-  color: #f4fffb;
-  box-shadow: var(--shadow);
-}
-
-.brand-mark {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.25), transparent 55%),
-    repeating-linear-gradient(
-      -18deg,
-      rgba(255, 255, 255, 0.12) 0 2px,
-      transparent 2px 8px
-    ),
-    #0b4f49;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-.eyebrow {
-  margin: 0 0 0.35rem;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.75rem;
-  font-weight: 600;
-  opacity: 0.8;
-}
-
-h1 {
-  margin: 0;
-  font-family: 'Instrument Serif', Georgia, serif;
-  font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 400;
-  letter-spacing: -0.03em;
 }
 
 h2 {
   margin: 0;
   font-size: 1.35rem;
   letter-spacing: -0.02em;
-}
-
-.lede {
-  margin: 0.65rem 0 0;
-  max-width: 42rem;
-  color: rgba(244, 255, 251, 0.82);
-  line-height: 1.5;
-}
-
-.lede code {
-  color: #dff8ee;
 }
 
 .hero-actions {
@@ -291,21 +360,23 @@ h2 {
   border: 0;
   border-radius: 999px;
   padding: 0.7rem 1.1rem;
-  background: #edf8f4;
-  color: var(--accent-deep);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
   font-weight: 600;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .btn:disabled {
-  opacity: 0.65;
+  opacity: 0.6;
   cursor: wait;
 }
 
 .btn.ghost {
   background: transparent;
-  color: #edf8f4;
-  border: 1px solid rgba(237, 248, 244, 0.35);
+  color: var(--accent-deep);
+  border: 1px solid var(--line);
 }
 
 .status-strip,
@@ -327,6 +398,14 @@ h2 {
   align-items: center;
   flex-wrap: wrap;
   padding: 0.9rem 1.1rem;
+}
+
+.status-strip .meta {
+  flex: 1 1 16rem;
+}
+
+.status-strip .hero-actions {
+  margin-left: auto;
 }
 
 .pill {
