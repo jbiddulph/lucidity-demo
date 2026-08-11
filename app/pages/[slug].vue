@@ -99,6 +99,7 @@ function formatValue(value: unknown) {
       <!-- Extra fields on document detail views (author, excerpt, etc.) -->
       <dl v-if="kind === 'document' && fieldEntries(document).length" class="fields">
         <div v-for="[key, value] in fieldEntries(document)" :key="key">
+          {{ fieldEntries(document) }}
           <dt class="mono">{{ key }}</dt>
           <dd>{{ formatValue(value) }}</dd>
         </div>
