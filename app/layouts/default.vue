@@ -1,4 +1,13 @@
 <script setup lang="ts">
+/**
+ * Default layout — site chrome shared by all pages.
+ *
+ * Navigation is driven by Lucidity Pages:
+ *   GET /api/lucidity/navigation
+ *     → GET {LUCIDITY}/api/query/schema-types
+ *     → GET {LUCIDITY}/api/query?type=page
+ * Each page becomes a header link using its title + slug.
+ */
 import type { LucidityNavItem } from '../../types/lucidity'
 
 const { data: navigation } = await useFetch<LucidityNavItem[]>('/api/lucidity/navigation')
@@ -9,6 +18,7 @@ const { data: navigation } = await useFetch<LucidityNavItem[]>('/api/lucidity/na
     <header class="site-header">
       <NuxtLink to="/" class="logo">Lucidity</NuxtLink>
       <nav v-if="navigation?.length" aria-label="Site">
+        <!-- Loop Lucidity Page documents as site nav -->
         <NuxtLink
           v-for="item in navigation"
           :key="item.id"

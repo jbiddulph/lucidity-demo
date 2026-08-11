@@ -1,21 +1,38 @@
 <script setup lang="ts">
-import type { LucidityDocument, LucidityPagePayload } from '../../types/lucidity'
+/**
+ * Dynamic Lucidity route — /:slug
+ *
+ * Handles both:
+ *   /blog              → Page (+ Include content loops, e.g. posts)
+ *   /first-blog-post   → Post (or any other schema document matched by slug)
+ *
+ * API: GET /api/lucidity/pages/:slug
+ *   → tries Page schema first, then other types via /api/query?type=…
+ */
+import type { LucidityDocument, LuciditySlugPayload } from '../../types/lucidity'
 
 const route = useRoute()
 const slug = computed(() => String(route.params.slug || ''))
 
 const { data: payload, error, pending } = await useAsyncData(
-  () => `lucidity-page-${slug.value}`,
-  () => $fetch<LucidityPagePayload>(`/api/lucidity/pages/${slug.value}`),
+  () => `lucidity-slug-${slug.value}`,
+  () => $fetch<LuciditySlugPayload>(`/api/lucidity/pages/${slug.value}`),
   { watch: [slug] },
 )
 
-const page = computed(() => payload.value?.page || null)
-const included = computed(() => payload.value?.included || null)
+const document = computed(() => payload.value?.document || null)
+const kind = computed(() => payload.value?.kind || null)
+const included = computed(() => payload.value?.included || [])
+const schema = computed(() => payload.value?.schema || null)
 
 const title = computed(() => {
-  const value = page.value?.title || page.value?.name || slug.value
-  return typeof value === 'string' ? value : slug.value
+  const doc = document.value
+  if (!doc) return slug.value
+  for (const key of ['title', 'name', 'headline', 'label', 'slug']) {
+    const value = doc[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return slug.value
 })
 
 useSeoMeta({
@@ -42,36 +59,79 @@ function itemHref(doc: LucidityDocument) {
   const value = doc.slug
   return typeof value === 'string' && value.trim() ? `/${value.trim()}` : null
 }
+
+function fieldEntries(doc: LucidityDocument) {
+  return Object.entries(doc).filter(([key, value]) => {
+    if (key.startsWith('_') || key === 'items') return false
+    if (value == null || value === '') return false
+    if (key === 'title' || key === 'name' || key === 'slug' || key === 'body') return false
+    return true
+  })
+}
+
+function formatValue(value: unknown) {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  return JSON.stringify(value, null, 2)
+}
 </script>
 
 <template>
   <article class="page-view">
-    <p v-if="pending" class="muted">Loading page…</p>
+    <p v-if="pending" class="muted">Loading…</p>
     <p v-else-if="error" class="error">
-      {{ error.message || error.statusMessage || 'Page not found' }}
+      {{ error.message || error.statusMessage || 'Not found' }}
     </p>
-    <template v-else-if="page">
-      <p class="eyebrow mono">{{ page._type || 'page' }}</p>
-      <h1>{{ title }}</h1>
-      <p v-if="page.slug" class="slug mono">/{{ page.slug }}</p>
-      <div v-if="page.body" class="body">{{ page.body }}</div>
 
-      <section v-if="included" class="collection">
+    <template v-else-if="document">
+      <p class="eyebrow mono">
+        {{ document._type || schema?.name || 'content' }}
+        <template v-if="kind === 'document'"> · document</template>
+        <template v-else> · page</template>
+      </p>
+      <h1>{{ title }}</h1>
+      <p v-if="document.slug" class="slug mono">/{{ document.slug }}</p>
+
+      <!-- Full body for pages and individual posts/documents -->
+      <div v-if="document.body" class="body">{{ document.body }}</div>
+
+      <!-- Extra fields on document detail views (author, excerpt, etc.) -->
+      <dl v-if="kind === 'document' && fieldEntries(document).length" class="fields">
+        <div v-for="[key, value] in fieldEntries(document)" :key="key">
+          <dt class="mono">{{ key }}</dt>
+          <dd>{{ formatValue(value) }}</dd>
+        </div>
+      </dl>
+
+      <!--
+        Include content loop (Pages only)
+        Lucidity Page field: items (type: collection)
+        Example on Blog: items = [{ type: "post", relation: "all", items: [...] }]
+      -->
+      <section
+        v-for="collection in included"
+        :key="collection.typeName"
+        class="collection"
+      >
         <header class="collection-head">
-          <h2>{{ included.schema?.title || included.typeName }}</h2>
+          <h2>{{ collection.schema?.title || collection.typeName }}</h2>
           <p class="mono">
-            includeType={{ included.typeName }} · {{ included.documents.length }} items
+            items → {{ collection.typeName }}
+            <template v-if="collection.relation"> ({{ collection.relation }})</template>
+            · {{ collection.documents.length }} items
           </p>
         </header>
 
-        <div v-if="included.documents.length" class="collection-grid">
+        <div v-if="collection.documents.length" class="collection-grid">
           <article
-            v-for="doc in included.documents"
+            v-for="doc in collection.documents"
             :key="String(doc._id || itemTitle(doc))"
             class="card"
           >
-            <p class="type mono">{{ doc._type || included.typeName }}</p>
+            <p class="type mono">{{ doc._type || collection.typeName }}</p>
             <h3>
+              <!-- Links to /:slug — resolved as a Post/document, not a Page -->
               <NuxtLink v-if="itemHref(doc)" :to="itemHref(doc)!">
                 {{ itemTitle(doc) }}
               </NuxtLink>
@@ -81,9 +141,13 @@ function itemHref(doc: LucidityDocument) {
           </article>
         </div>
         <p v-else class="muted">
-          No published <code class="mono">{{ included.typeName }}</code> documents yet.
+          No published <code class="mono">{{ collection.typeName }}</code> documents yet.
         </p>
       </section>
+
+      <p v-if="kind === 'document'" class="back">
+        <NuxtLink to="/blog">← Back to Blog</NuxtLink>
+      </p>
     </template>
   </article>
 </template>
@@ -137,6 +201,33 @@ h3 a {
   font-size: 1.05rem;
 }
 
+.fields {
+  margin: 1.5rem 0 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.fields > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 10rem) 1fr;
+  gap: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--line);
+}
+
+dt {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+}
+
+dd {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .collection {
   margin-top: 2.5rem;
   padding-top: 1.5rem;
@@ -187,6 +278,15 @@ h3 a {
   overflow: hidden;
 }
 
+.back {
+  margin-top: 2rem;
+}
+
+.back a {
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
 .muted,
 .error {
   color: var(--ink-muted);
@@ -200,5 +300,12 @@ code {
   background: var(--surface-2);
   border-radius: 6px;
   padding: 0.1rem 0.35rem;
+}
+
+@media (max-width: 640px) {
+  .fields > div {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
 }
 </style>

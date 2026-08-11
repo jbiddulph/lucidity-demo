@@ -1,22 +1,27 @@
 import type { LucidityDocument } from '../../types/lucidity'
 
+/**
+ * Local fixtures used when LUCIDITY_USE_MOCK=true.
+ * Mirrors the live Lucidity shape, including Page.items collections.
+ */
 const schemaTypes: LucidityDocument[] = [
   {
     _type: 'schema',
     _id: 'mock-schema-page',
     name: 'page',
     title: 'Page',
-    description: 'Static pages. Optional includeType selects another schema to list on the page.',
+    description: 'Static pages with optional Include content collections',
     icon: 'page',
     fields: [
       { name: 'title', type: 'string', title: 'Title', required: true },
       { name: 'slug', type: 'slug', title: 'Slug', required: true },
       { name: 'body', type: 'text', title: 'Body' },
       {
-        name: 'includeType',
-        type: 'string',
-        title: 'Include content type',
-        description: 'Schema name to loop on this page, e.g. post',
+        name: 'items',
+        type: 'collection',
+        title: 'Include content',
+        description: 'Select schema types to pull into this page',
+        to: [],
       },
     ],
   },
@@ -32,7 +37,6 @@ const schemaTypes: LucidityDocument[] = [
       { name: 'slug', type: 'slug', title: 'Slug', required: true },
       { name: 'excerpt', type: 'text', title: 'Excerpt' },
       { name: 'body', type: 'text', title: 'Body', required: true },
-      { name: 'author', type: 'reference', title: 'Author' },
     ],
   },
   {
@@ -50,62 +54,67 @@ const schemaTypes: LucidityDocument[] = [
   },
 ]
 
+const posts: LucidityDocument[] = [
+  {
+    _type: 'post',
+    _id: 'mock-post-1',
+    _publishedAt: '2026-08-11T17:01:24.509Z',
+    title: 'First Blog post',
+    slug: 'first-blog-post',
+    body: 'here',
+    excerpt: '',
+  },
+  {
+    _type: 'post',
+    _id: 'mock-post-2',
+    _publishedAt: '2026-08-11T18:00:00.000Z',
+    title: 'Second post',
+    slug: 'second-post',
+    body: 'Another post for the Blog loop.',
+    excerpt: 'Included via page.items',
+  },
+]
+
 const documentsByType: Record<string, LucidityDocument[]> = {
   page: [
     {
       _type: 'page',
+      _id: 'mock-page-blog',
+      _publishedAt: '2026-08-11T17:16:14.842Z',
+      title: 'Blog',
+      slug: 'blog',
+      body: '',
+      // Lucidity "Include content" collection — posts embedded on the page
+      items: [
+        {
+          type: 'post',
+          relation: 'all',
+          items: posts,
+        },
+      ],
+    },
+    {
+      _type: 'page',
       _id: 'mock-page-about',
-      _publishedAt: '2026-08-11T08:50:10.374Z',
       title: 'About us',
       slug: 'about-us',
       body: 'This is the about us page.',
+      items: [],
     },
     {
       _type: 'page',
-      _id: 'mock-page-blog',
-      _publishedAt: '2026-08-11T08:51:10.374Z',
-      title: 'Blog',
-      slug: 'blog',
-      body: 'Latest writing from the team.',
-      includeType: 'post',
-    },
-    {
-      _type: 'page',
-      _id: 'mock-page-team',
-      _publishedAt: '2026-08-11T08:52:10.374Z',
-      title: 'Team',
-      slug: 'team',
-      body: 'Meet the people behind the work.',
-      includeType: 'author',
+      _id: 'mock-page-services',
+      title: 'Services',
+      slug: 'services',
+      body: 'Our services page.',
+      items: [],
     },
   ],
-  post: [
-    {
-      _type: 'post',
-      _id: 'mock-post-1',
-      _publishedAt: '2026-08-10T23:19:53.497Z',
-      title: 'This is the first post',
-      slug: 'this-is-the-first-post',
-      body: 'Hello from a mock post.',
-      excerpt: 'first post',
-      author: 'john-biddulph',
-    },
-    {
-      _type: 'post',
-      _id: 'mock-post-2',
-      _publishedAt: '2026-08-11T10:00:00.000Z',
-      title: 'Shipping schema-driven pages',
-      slug: 'shipping-schema-driven-pages',
-      body: 'Pages can include another content type and loop it.',
-      excerpt: 'Include posts on a Blog page.',
-      author: 'john-biddulph',
-    },
-  ],
+  post: posts,
   author: [
     {
       _type: 'author',
       _id: 'mock-author-1',
-      _publishedAt: '2026-08-10T23:20:25.135Z',
       name: 'John Biddulph',
       slug: 'john-biddulph',
       bio: 'Builds headless CMS demos and Nuxt apps.',

@@ -26,16 +26,36 @@ export interface LucidityNavItem {
   path: string
 }
 
+/**
+ * One "Include content" collection from a Page.
+ * Lucidity shape example:
+ * { type: "post", relation: "all", items: [ /* post docs *\/ ] }
+ */
 export interface LucidityIncludedCollection {
   typeName: string
+  relation: string | null
   schema: LuciditySchemaType | null
   documents: LucidityDocument[]
 }
 
+/** @deprecated use LuciditySlugPayload — kept for older call sites */
 export interface LucidityPagePayload {
   page: LucidityDocument
-  includeType: string | null
-  included: LucidityIncludedCollection | null
+  included: LucidityIncludedCollection[]
+}
+
+/**
+ * Resolved /:slug payload.
+ * - kind "page": Lucidity Page (+ optional Include content loops)
+ * - kind "document": any other schema doc matched by slug (post, author, …)
+ */
+export interface LuciditySlugPayload {
+  kind: 'page' | 'document'
+  /** The matched Lucidity document (page, post, author, …) */
+  document: LucidityDocument
+  schema: LuciditySchemaType | null
+  /** Only set when kind === "page" */
+  included: LucidityIncludedCollection[]
 }
 
 export interface LucidityDemoPayload {

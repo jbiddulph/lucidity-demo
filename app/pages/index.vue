@@ -1,4 +1,14 @@
 <script setup lang="ts">
+/**
+ * Home / demo dashboard
+ *
+ * Lucidity calls (via /api/lucidity/demo):
+ *   GET /api/query/schema-types  → content-type tabs
+ *   GET /api/query?type={name}   → documents per type
+ *   GET /api/query?type=page     → used for nav preview
+ *
+ * Pages with Include content (items) are rendered on /:slug — see [slug].vue
+ */
 import type { LucidityDemoPayload, LucidityDocument } from '../../types/lucidity'
 
 type StatusPayload = {
@@ -121,7 +131,8 @@ LUCIDITY_USE_MOCK=false</pre>
         Built from schema
         <code class="mono">{{ demo.pageSchemaName }}</code>
         via <code class="mono">/api/query?type={{ demo.pageSchemaName }}</code>.
-        Optional page field <code class="mono">includeType</code> pulls another schema into that page (e.g. Blog → post).
+        Optional page field <code class="mono">items</code> (Include content)
+        pulls another schema into that page (e.g. Blog → post) and we loop it.
       </p>
       <ul>
         <li v-for="item in demo.navigation" :key="item.id">

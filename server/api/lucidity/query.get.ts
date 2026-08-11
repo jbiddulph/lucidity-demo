@@ -1,3 +1,9 @@
+/**
+ * GET /api/lucidity/query?type=…
+ *
+ * Thin passthrough to Lucidity:
+ *   GET {LUCIDITY}/api/query?type={type}
+ */
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const type = String(query.type || '').trim()

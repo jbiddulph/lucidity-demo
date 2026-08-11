@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type {
   LucidityDemoPayload,
   LucidityDocument,
@@ -5,32 +7,77 @@ import type {
   LucidityNavItem,
   LucidityPagePayload,
   LuciditySchemaType,
+  LuciditySlugPayload,
 } from '../../types/lucidity'
 import { getMockContent, getMockSchemaTypes } from './lucidity-mock'
 
-/** Page fields that can point at another schema to loop on the page */
-const INCLUDE_TYPE_FIELDS = [
-  'includeType',
-  'include_type',
-  'contentType',
-  'content_type',
-  'schemaType',
-  'schema_type',
-  'loopType',
-  'loop_type',
-  'collection',
-] as const
+// ---------------------------------------------------------------------------
+// Runtime config
+// Reads LUCIDITY_BASE_URL + LUCIDITY_API_KEY from Nuxt runtimeConfig / .env
+// ---------------------------------------------------------------------------
 
+/**
+ * Resolve Lucidity connection settings.
+ * Reads .env on each call (demo-friendly) so API key / base URL updates
+ * apply without relying only on Nuxt runtimeConfig baked at boot.
+ */
 export function getLucidityRuntime() {
   const config = useRuntimeConfig()
-  const rawBase = String(config.lucidity.baseUrl || '').trim()
+  const fileEnv = readLucidityEnvFile()
+
+  const rawBase = String(
+    fileEnv.LUCIDITY_BASE_URL
+    || process.env.LUCIDITY_BASE_URL
+    || config.lucidity.baseUrl
+    || '',
+  ).trim()
+
+  // Allow pasting either the site origin or a full /api/query?... URL
   const baseUrl = rawBase
     .replace(/\/api\/query.*$/i, '')
     .replace(/\/$/, '')
-  const apiKey = String(config.lucidity.apiKey || '').trim()
-  const useMock = Boolean(config.lucidityUseMock) || !baseUrl || !apiKey
+
+  const apiKey = String(
+    fileEnv.LUCIDITY_API_KEY
+    || fileEnv.LUCIDITY_TOKEN
+    || process.env.LUCIDITY_API_KEY
+    || process.env.LUCIDITY_TOKEN
+    || config.lucidity.apiKey
+    || '',
+  ).trim()
+
+  const useMockFlag = (
+    fileEnv.LUCIDITY_USE_MOCK
+    || process.env.LUCIDITY_USE_MOCK
+    || ''
+  ).toLowerCase()
+
+  const useMock = useMockFlag === 'true' || !baseUrl || !apiKey
 
   return { baseUrl, apiKey, useMock }
+}
+
+/** Parse project .env for Lucidity keys (simple KEY=VALUE lines). */
+function readLucidityEnvFile(): Record<string, string> {
+  try {
+    const envPath = resolve(process.cwd(), '.env')
+    if (!existsSync(envPath)) return {}
+
+    const out: Record<string, string> = {}
+    for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+      const eq = trimmed.indexOf('=')
+      if (eq <= 0) continue
+      const key = trimmed.slice(0, eq).trim()
+      const value = trimmed.slice(eq + 1).trim().replace(/^['"]|['"]$/g, '')
+      if (key.startsWith('LUCIDITY_')) out[key] = value
+    }
+    return out
+  }
+  catch {
+    return {}
+  }
 }
 
 export function isLucidityConfigured() {
@@ -38,6 +85,7 @@ export function isLucidityConfigured() {
   return Boolean(baseUrl && apiKey)
 }
 
+/** Lucidity public API auth — API key via Bearer and x-api-key */
 function authHeaders(apiKey: string) {
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -48,6 +96,10 @@ function authHeaders(apiKey: string) {
 function asString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : ''
 }
+
+// ---------------------------------------------------------------------------
+// Schema helpers
+// ---------------------------------------------------------------------------
 
 export function normalizeSchemaType(doc: LucidityDocument, index: number): LuciditySchemaType | null {
   const contentName = asString(doc.name) || asString(doc.slug)
@@ -73,6 +125,7 @@ function isPageSchema(type: LuciditySchemaType) {
   return name === 'page' || name === 'pages' || title === 'page' || title === 'pages'
 }
 
+/** Map a Lucidity Page document into a site nav link */
 export function toNavItem(doc: LucidityDocument): LucidityNavItem | null {
   const slug = asString(doc.slug)
   if (!slug) return null
@@ -88,47 +141,15 @@ export function toNavItem(doc: LucidityDocument): LucidityNavItem | null {
   }
 }
 
-function coerceTypeName(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    return trimmed || null
-  }
-
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>
-    return (
-      asString(record.name)
-      || asString(record.slug)
-      || asString(record.value)
-      || asString(record.type)
-      || null
-    )
-  }
-
-  return null
-}
+// ---------------------------------------------------------------------------
+// Lucidity HTTP helpers
+// ---------------------------------------------------------------------------
 
 /**
- * Resolve which schema type a page wants to include/loop.
- * Supports string values and simple reference/select objects from Lucidity.
+ * Low-level GET against the Lucidity workspace.
+ * Example: lucidityGet('/api/query/schema-types')
+ * Example: lucidityGet('/api/query', { type: 'post' })
  */
-export function resolveIncludeType(page: LucidityDocument): string | null {
-  for (const field of INCLUDE_TYPE_FIELDS) {
-    const resolved = coerceTypeName(page[field])
-    if (resolved) return resolved
-  }
-
-  for (const field of ['includeTypes', 'include_types', 'contentTypes', 'content_types'] as const) {
-    const value = page[field]
-    if (Array.isArray(value) && value.length) {
-      const resolved = coerceTypeName(value[0])
-      if (resolved) return resolved
-    }
-  }
-
-  return null
-}
-
 async function lucidityGet<T>(path: string, query?: Record<string, string | undefined>): Promise<T> {
   const { baseUrl, apiKey } = getLucidityRuntime()
 
@@ -139,6 +160,10 @@ async function lucidityGet<T>(path: string, query?: Record<string, string | unde
   })
 }
 
+/**
+ * Lucidity API: GET /api/query?type={schemaName}
+ * Returns published documents for one content type (page, post, author, …).
+ */
 export async function lucidityQuery(
   type: string,
   query: Record<string, string | undefined> = {},
@@ -155,6 +180,7 @@ export async function lucidityQuery(
   }
 
   try {
+    // Lucidity document query — type is the schema "name" (e.g. "post")
     const data = await lucidityGet<LucidityDocument[]>('/api/query', {
       type: normalizedType,
       ...query,
@@ -187,8 +213,9 @@ export async function lucidityQuery(
 }
 
 /**
- * Discover content types from Lucidity.
- * Public contract: GET /api/query/schema-types
+ * Lucidity API: GET /api/query/schema-types
+ * Returns every content type (schema) defined in the workspace.
+ * Used to build content tabs and to recognise the Page schema for nav.
  */
 export async function discoverSchemaTypes(): Promise<{ types: LuciditySchemaType[], note?: string }> {
   const { useMock } = getLucidityRuntime()
@@ -236,10 +263,77 @@ export async function discoverSchemaTypes(): Promise<{ types: LuciditySchemaType
   }
 }
 
+// ---------------------------------------------------------------------------
+// Page "Include content" (collection field named `items`)
+// Lucidity shape on a Page document:
+//   items: [
+//     { type: "post", relation: "all", items: [ /* post docs */ ] }
+//   ]
+// ---------------------------------------------------------------------------
+
+function isCollectionEntry(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+/**
+ * Turn Page.items (Include content) into loopable collections.
+ * Prefer documents already embedded by Lucidity under entry.items.
+ * If relation is "all" but the embedded list is empty, fall back to
+ * GET /api/query?type={entry.type}.
+ */
+export async function resolveIncludedCollections(
+  page: LucidityDocument,
+  schemaTypes: LuciditySchemaType[],
+): Promise<LucidityIncludedCollection[]> {
+  const rawItems = page.items
+  if (!Array.isArray(rawItems) || !rawItems.length) {
+    return []
+  }
+
+  const collections: LucidityIncludedCollection[] = []
+
+  for (const entry of rawItems) {
+    if (!isCollectionEntry(entry)) continue
+
+    const typeName = asString(entry.type)
+    if (!typeName) continue
+
+    const relation = asString(entry.relation) || null
+    const schema = schemaTypes.find((type) => type.name === typeName) || null
+
+    // Lucidity often embeds the selected documents on the page already
+    let documents: LucidityDocument[] = Array.isArray(entry.items)
+      ? entry.items.filter((doc): doc is LucidityDocument => isCollectionEntry(doc))
+      : []
+
+    // Fallback: fetch live documents for this schema type
+    if (!documents.length) {
+      documents = await lucidityQuery(typeName)
+    }
+
+    collections.push({
+      typeName,
+      relation,
+      schema,
+      documents,
+    })
+  }
+
+  return collections
+}
+
+// ---------------------------------------------------------------------------
+// High-level demo helpers
+// ---------------------------------------------------------------------------
+
+/** Load schemas + documents + page-based site navigation */
 export async function lucidityFetchAll(): Promise<LucidityDemoPayload> {
   const { useMock } = getLucidityRuntime()
+
+  // 1) Lucidity: list all schema types
   const discovered = await discoverSchemaTypes()
 
+  // 2) Lucidity: for each schema, load its documents via /api/query?type=…
   const types = await Promise.all(
     discovered.types.map(async (type) => ({
       type,
@@ -247,6 +341,7 @@ export async function lucidityFetchAll(): Promise<LucidityDemoPayload> {
     })),
   )
 
+  // 3) If a Page schema exists, its documents become the site nav
   const pageBucket = types.find((bucket) => isPageSchema(bucket.type))
   const navigation = (pageBucket?.documents || [])
     .map((doc) => toNavItem(doc))
@@ -263,37 +358,66 @@ export async function lucidityFetchAll(): Promise<LucidityDemoPayload> {
   }
 }
 
-export async function lucidityGetPageBySlug(slug: string): Promise<LucidityPagePayload | null> {
+/**
+ * Resolve /:slug against Lucidity content.
+ *
+ * Order:
+ *   1. Page schema (GET /api/query?type=page) — supports Include content loops
+ *   2. Every other schema (post, author, …) until a matching slug is found
+ *
+ * This is why /blog works as a Page and /first-blog-post works as a Post.
+ */
+export async function lucidityGetBySlug(slug: string): Promise<LuciditySlugPayload | null> {
   const discovered = await discoverSchemaTypes()
   const pageType = discovered.types.find((type) => isPageSchema(type))
 
-  if (!pageType) {
-    return null
-  }
+  // 1) Try Pages first
+  if (pageType) {
+    // Lucidity: GET /api/query?type=page
+    const pages = await lucidityQuery(pageType.name)
+    const page = pages.find((doc) => asString(doc.slug) === slug) || null
 
-  const pages = await lucidityQuery(pageType.name)
-  const page = pages.find((doc) => asString(doc.slug) === slug) || null
-
-  if (!page) {
-    return null
-  }
-
-  const includeType = resolveIncludeType(page)
-  let included: LucidityIncludedCollection | null = null
-
-  if (includeType) {
-    const schema = discovered.types.find((type) => type.name === includeType) || null
-    const documents = await lucidityQuery(includeType)
-    included = {
-      typeName: includeType,
-      schema,
-      documents,
+    if (page) {
+      const included = await resolveIncludedCollections(page, discovered.types)
+      return {
+        kind: 'page',
+        document: page,
+        schema: pageType,
+        included,
+      }
     }
   }
 
+  // 2) Fall back to other schema types (post, author, custom types, …)
+  const otherTypes = discovered.types.filter((type) => !isPageSchema(type))
+
+  for (const type of otherTypes) {
+    // Lucidity: GET /api/query?type={type.name}
+    const documents = await lucidityQuery(type.name)
+    const document = documents.find((doc) => asString(doc.slug) === slug) || null
+
+    if (document) {
+      return {
+        kind: 'document',
+        document,
+        schema: type,
+        included: [],
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * @deprecated use lucidityGetBySlug — kept so older "pages only" call sites still work
+ */
+export async function lucidityGetPageBySlug(slug: string): Promise<LucidityPagePayload | null> {
+  const resolved = await lucidityGetBySlug(slug)
+  if (!resolved || resolved.kind !== 'page') return null
+
   return {
-    page,
-    includeType,
-    included,
+    page: resolved.document,
+    included: resolved.included,
   }
 }

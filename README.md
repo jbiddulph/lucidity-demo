@@ -1,34 +1,36 @@
 # Lucidity Demo
 
-Nuxt app that discovers Lucidity content types, builds nav from Pages, and can loop another schema on a page.
+Nuxt app that discovers Lucidity content types, builds nav from Pages, and loops
+**Include content** collections (e.g. posts on the Blog page).
 
-## Lucidity API contract
+## Lucidity API calls used by this demo
 
-| Endpoint | Purpose |
+| Call | Purpose |
 | --- | --- |
-| `GET /api/query/schema-types` | List schemas |
-| `GET /api/query?type={name}` | Documents for a schema |
-| Page documents | Site navigation (`title` + `slug`) |
+| `GET /api/query/schema-types` | List schemas (author, page, post, …) |
+| `GET /api/query?type=page` | Pages → site navigation |
+| `GET /api/query?type={name}` | Documents for any schema |
+| Page field `items` (type `collection`) | Include other schemas on a page |
 
-## Page → included schema loop
+### Blog → posts example
 
-Add an optional field on the **Page** schema in Lucidity:
+Lucidity Page document:
 
 ```json
 {
-  "name": "includeType",
-  "type": "string",
-  "title": "Include content type",
-  "description": "Schema name to list on this page, e.g. post"
+  "title": "Blog",
+  "slug": "blog",
+  "items": [
+    {
+      "type": "post",
+      "relation": "all",
+      "items": [ { "title": "First Blog post", "slug": "first-blog-post", ... } ]
+    }
+  ]
 }
 ```
 
-Example:
-
-- Page `Blog` (`slug: blog`) with `includeType: "post"`
-- Demo loads `/blog`, then also `GET /api/query?type=post`, and loops posts on that page
-
-Aliases also accepted: `contentType`, `schemaType`, `loopType`, `collection`.
+The demo route `/blog` reads that `items` array and loops each included post.
 
 ## Setup
 
@@ -44,5 +46,4 @@ LUCIDITY_API_KEY=luc_…
 LUCIDITY_USE_MOCK=false
 ```
 
-Use `LUCIDITY_USE_MOCK=true` to preview Blog → posts locally before the Lucidity field exists.
-# lucidity-demo
+Open [http://localhost:3000/blog](http://localhost:3000/blog) to see posts listed under the Blog page.
