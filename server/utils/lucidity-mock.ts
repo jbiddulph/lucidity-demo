@@ -64,6 +64,7 @@ const schemaTypes: LucidityDocument[] = [
     fields: [
       { name: 'title', type: 'string', title: 'Header text', required: true },
       { name: 'hero', type: 'image', title: 'Hero image' },
+      { name: 'body', type: 'text', title: 'Body' },
     ],
   },
 ]
@@ -144,6 +145,7 @@ const documentsByType: Record<string, LucidityDocument[]> = {
       _id: 'mock-homepage-1',
       title: 'Welcome to the Lucidity Demo',
       hero: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=1600&q=80',
+      body: 'Homepage body from Lucidity.\n\n<strong>Second paragraph</strong> with light HTML.',
     },
   ],
 }

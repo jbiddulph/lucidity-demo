@@ -3,7 +3,7 @@
  * Home / demo dashboard
  *
  * Lucidity calls:
- *   GET /api/query?type=homepage → hero image + header text (top of page)
+ *   GET /api/query?type=homepage → hero image, header text, body
  *   GET /api/lucidity/demo       → schema tabs + documents
  *
  * Pages with Include content (items) are rendered on /:slug — see [slug].vue
@@ -51,6 +51,19 @@ const heroImage = computed(() => {
   }
   return null
 })
+
+const heroBody = computed(() => {
+  const value = homepage.value?.body
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+})
+
+/** Lucidity body may include light HTML + paragraph breaks */
+function bodyHtml(raw: string) {
+  return raw
+    .split(/\n\n+/)
+    .map((block) => `<p>${block.replace(/\n/g, '<br>')}</p>`)
+    .join('')
+}
 
 useSeoMeta({
   title: () => (heroTitle.value ? `${heroTitle.value} · Lucidity` : 'Lucidity Demo'),
@@ -124,6 +137,11 @@ function formatDate(value?: string) {
     </section>
 
     <div class="page">
+    <!-- Lucidity homepage.body -->
+    <section v-if="heroBody" class="cms-body" aria-label="Homepage content">
+      <div class="cms-body-copy" v-html="bodyHtml(heroBody)" />
+    </section>
+
     <section class="status-strip" aria-label="Connection status">
       <div class="pill" :data-tone="status?.useMock ? 'warn' : 'ok'">
         {{ status?.useMock ? 'Mock fixtures' : 'Live Lucidity API' }}
@@ -340,6 +358,30 @@ LUCIDITY_USE_MOCK=false</pre>
   padding: 2rem 0 4rem;
   display: grid;
   gap: 1.25rem;
+}
+
+.cms-body {
+  padding: 0.25rem 0 0.5rem;
+}
+
+.cms-body-copy {
+  max-width: 42rem;
+  color: var(--ink);
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.cms-body-copy :deep(p) {
+  margin: 0 0 1.1rem;
+}
+
+.cms-body-copy :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.cms-body-copy :deep(strong) {
+  font-weight: 650;
+  color: var(--ink);
 }
 
 h2 {
